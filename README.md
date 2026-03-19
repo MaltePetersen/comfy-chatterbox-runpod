@@ -55,16 +55,18 @@ List all available voice presets and uploaded voices.
 | 2 | `Claribel Dervla` | Shibby | Custom voice |
 | 3 | `Daisy Studious` | Shadowheart | Dark, mysterious British |
 | 4 | `Gracie Wise` | Ava | German audio creator |
-| 5 | `Tammie Ema` | VCTK p233 | English |
-| 6 | `Alison Dietlinde` | VCTK p236 | English |
-| 7 | `Ana Florence` | VCTK p240 | English |
-| 8 | `Annmarie Nele` | Expresso dataset | Calm / narrator |
-| 9 | `Asya Anara` | Expresso dataset | Happy / upbeat |
-| 10 | `Brenda Stern` | LibriVox (CC0) | Audiobook narrator |
-| 11 | `Gitta Nikolina` | Expresso dataset | Dominant / commanding |
-| 12 | `Henriette Usha` | VCTK p225 | Standard English |
-| 13 | `Sofia Hellen` | VCTK p228 | Standard English |
-| 14 | `Tammy Grit` | VCTK p229 | Southern English |
+| 5 | `Tanja Adelina` | MissOpal | Custom voice |
+| 6 | `Vjollca Johnnie` | WhatsApp Deutsch | German |
+| 7 | `Tammie Ema` | VCTK p233 | English |
+| 8 | `Alison Dietlinde` | VCTK p236 | English |
+| 9 | `Ana Florence` | VCTK p240 | English |
+| 10 | `Annmarie Nele` | Expresso dataset | Calm / narrator |
+| 11 | `Asya Anara` | Expresso dataset | Happy / upbeat |
+| 12 | `Brenda Stern` | LibriVox (CC0) | Audiobook narrator |
+| 13 | `Gitta Nikolina` | Expresso dataset | Dominant / commanding |
+| 14 | `Henriette Usha` | VCTK p225 | Standard English |
+| 15 | `Sofia Hellen` | VCTK p228 | Standard English |
+| 16 | `Tammy Grit` | VCTK p229 | Southern English |
 
 Voice names match the old XTTS speaker dropdown so the frontend works without changes. Any unrecognized speaker name falls back to `nicole`.
 
@@ -75,4 +77,4 @@ Voice names match the old XTTS speaker dropdown so the frontend works without ch
 3. The server auto-discovers it — no restart needed
 
 Remaining XTTS names (in frontend dropdown order):
-`Tanja Adelina`, `Vjollca Johnnie`, `Andrew Chipper`, `Badr Odhiambo`, `Dionisio Schuyler`, ...
+`Andrew Chipper`, `Badr Odhiambo`, `Dionisio Schuyler`, ...

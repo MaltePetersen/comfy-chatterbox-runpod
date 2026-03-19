@@ -63,7 +63,14 @@ def get_model(model_type="turbo"):
             models[model_type] = ChatterboxTTS.from_pretrained(device=device)
         elif model_type == "multilingual":
             from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-            models[model_type] = ChatterboxMultilingualTTS.from_pretrained(device=device)
+            # Multilingual checkpoint was saved with CUDA tensors — patch
+            # torch.load to force map_location so it works on CPU/MPS.
+            _orig_load = torch.load
+            torch.load = lambda *a, **kw: _orig_load(*a, **{**kw, "map_location": device})
+            try:
+                models[model_type] = ChatterboxMultilingualTTS.from_pretrained(device=device)
+            finally:
+                torch.load = _orig_load
         print(f"Loaded Chatterbox {model_type} model on {device}")
     return models[model_type]
 
@@ -125,7 +132,12 @@ async def generate_tts(request: Request):
     # Select model: multilingual for non-English, otherwise turbo or standard
     if lang and lang != "en":
         model = get_model("multilingual")
-        generate_kwargs = {"text": text, "language_id": lang}
+        generate_kwargs = {
+            "text": text,
+            "language_id": lang,
+            "exaggeration": exaggeration,
+            "cfg_weight": cfg_weight,
+        }
         if audio_prompt_path:
             generate_kwargs["audio_prompt_path"] = audio_prompt_path
 
