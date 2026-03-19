@@ -1,4 +1,5 @@
 import os
+import time
 from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,9 @@ import uuid
 import torch
 import torchaudio
 import shutil
+
+# --- Performance: enable TF32 matmul precision where available ---
+torch.set_float32_matmul_precision("high")
 
 # Fix for Apple Silicon: resemble-perth watermarker has no ARM binary,
 # so PerthImplicitWatermarker is None. Patch it with DummyWatermarker.
@@ -51,10 +55,57 @@ print(f"Device: {device}")
 # Lazy-loaded model cache
 models = {}
 
+# Voice embedding cache: avoids re-computing speaker embeddings for repeated voices.
+# Key = (model_type, abs_path, mtime), Value = model.conds (Conditionals dataclass)
+_voice_cache = {}
+
+
+def _optimize_model(model, model_type):
+    """Apply post-load inference optimizations to a Chatterbox model."""
+    # LSTM flatten_parameters — makes LSTM memory contiguous for faster CPU inference
+    try:
+        model.ve.lstm.flatten_parameters()
+        print(f"  + LSTM flatten_parameters")
+    except Exception as e:
+        print(f"  - LSTM flatten_parameters failed: {e}")
+
+    # HiFiGAN: remove weight_norm from vocoder Conv layers (redundant at inference time).
+    # The library uses torch.nn.utils.parametrizations.weight_norm (new API), so we
+    # remove via parametrize.remove_parametrizations. Skip m_source (no weight_norm).
+    try:
+        vocoder = model.s3gen.mel2wav
+        from torch.nn.utils.parametrize import remove_parametrizations
+        count = 0
+        for module in vocoder.modules():
+            if hasattr(module, "parametrizations") and hasattr(module.parametrizations, "weight"):
+                remove_parametrizations(module, "weight")
+                count += 1
+        print(f"  + HiFiGAN weight_norm removed ({count} layers)")
+    except Exception as e:
+        print(f"  - HiFiGAN weight_norm removal failed: {e}")
+
+    # Optional: half precision (CHATTERBOX_DTYPE=float16)
+    dtype_str = os.environ.get("CHATTERBOX_DTYPE", "")
+    if dtype_str == "float16":
+        try:
+            model.half()
+            print(f"  + Converted to float16")
+        except Exception as e:
+            print(f"  - float16 conversion failed: {e}")
+
+    # Optional: torch.compile on T3 transformer (CHATTERBOX_COMPILE=true)
+    if os.environ.get("CHATTERBOX_COMPILE", "").lower() in ("1", "true"):
+        try:
+            model.t3.tfmr = torch.compile(model.t3.tfmr)
+            print(f"  + torch.compile on T3 transformer (first call will be slow)")
+        except Exception as e:
+            print(f"  - torch.compile failed: {e}")
+
 
 def get_model(model_type="turbo"):
-    """Lazy-load and cache Chatterbox models."""
+    """Lazy-load, optimize, and cache Chatterbox models."""
     if model_type not in models:
+        t0 = time.perf_counter()
         if model_type == "turbo":
             from chatterbox.tts_turbo import ChatterboxTurboTTS
             models[model_type] = ChatterboxTurboTTS.from_pretrained(device=device)
@@ -71,8 +122,37 @@ def get_model(model_type="turbo"):
                 models[model_type] = ChatterboxMultilingualTTS.from_pretrained(device=device)
             finally:
                 torch.load = _orig_load
-        print(f"Loaded Chatterbox {model_type} model on {device}")
+        load_time = time.perf_counter() - t0
+        print(f"Loaded Chatterbox {model_type} model on {device} ({load_time:.1f}s)")
+        _optimize_model(models[model_type], model_type)
     return models[model_type]
+
+
+def _prepare_voice(model, model_type, audio_prompt_path):
+    """Prepare voice conditionals with caching. Returns True if conditionals are ready."""
+    if not audio_prompt_path:
+        return False
+
+    abs_path = os.path.abspath(audio_prompt_path)
+    try:
+        mtime = os.path.getmtime(abs_path)
+    except OSError:
+        return False
+
+    cache_key = (model_type, abs_path, mtime)
+
+    if cache_key in _voice_cache:
+        model.conds = _voice_cache[cache_key]
+        print(f"  Voice cache HIT: {os.path.basename(abs_path)}")
+        return True
+
+    # Cache miss — compute conditionals (expensive: loads WAV, runs LSTM + CAMPPlus + S3Tokenizer)
+    t0 = time.perf_counter()
+    model.prepare_conditionals(abs_path)
+    prep_time = time.perf_counter() - t0
+    _voice_cache[cache_key] = model.conds
+    print(f"  Voice cache MISS: {os.path.basename(abs_path)} (computed in {prep_time:.2f}s, cached)")
+    return True
 
 
 VOICES_DIR = "./voices"
@@ -131,38 +211,48 @@ async def generate_tts(request: Request):
 
     # Select model: multilingual for non-English, otherwise turbo or standard
     if lang and lang != "en":
-        model = get_model("multilingual")
+        model_type = "multilingual"
+        model = get_model(model_type)
+        voice_cached = _prepare_voice(model, model_type, audio_prompt_path)
         generate_kwargs = {
             "text": text,
             "language_id": lang,
             "exaggeration": exaggeration,
             "cfg_weight": cfg_weight,
         }
-        if audio_prompt_path:
+        if audio_prompt_path and not voice_cached:
             generate_kwargs["audio_prompt_path"] = audio_prompt_path
 
     elif tts_voice == "standard":
         # Explicit standard model request — supports exaggeration/cfg_weight
-        model = get_model("standard")
+        model_type = "standard"
+        model = get_model(model_type)
+        voice_cached = _prepare_voice(model, model_type, audio_prompt_path)
         generate_kwargs = {
             "text": text,
             "exaggeration": exaggeration,
             "cfg_weight": cfg_weight,
         }
-        if audio_prompt_path:
+        if audio_prompt_path and not voice_cached:
             generate_kwargs["audio_prompt_path"] = audio_prompt_path
 
     else:
         # cpu1, gpu1, cloning, turbo → use Turbo (fastest, supports [laugh] etc.)
-        model = get_model("turbo")
+        model_type = "turbo"
+        model = get_model(model_type)
+        voice_cached = _prepare_voice(model, model_type, audio_prompt_path)
         generate_kwargs = {"text": text}
-        if audio_prompt_path:
+        if audio_prompt_path and not voice_cached:
             generate_kwargs["audio_prompt_path"] = audio_prompt_path
 
     print(f"Generating: tts_voice={tts_voice}, lang={lang}, speaker={xtts_speaker}")
     print(f"Model kwargs: { {k: v for k, v in generate_kwargs.items() if k != 'text'} }")
 
-    wav = model.generate(**generate_kwargs)
+    t0 = time.perf_counter()
+    with torch.inference_mode():
+        wav = model.generate(**generate_kwargs)
+    gen_time = time.perf_counter() - t0
+    print(f"Generated in {gen_time:.2f}s ({len(text)} chars)")
 
     tmp_wav = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.wav")
     torchaudio.save(tmp_wav, wav, model.sr)
@@ -203,3 +293,15 @@ async def list_voices():
         "my_voices": my_voices,
         "default": "nicole.wav",
     })
+
+
+@app.on_event("startup")
+async def preload_models():
+    """Pre-load models at startup. Control via CHATTERBOX_PRELOAD env var (default: turbo)."""
+    preload = os.environ.get("CHATTERBOX_PRELOAD", "turbo")
+    if preload:
+        for model_type in preload.split(","):
+            model_type = model_type.strip()
+            if model_type:
+                print(f"Pre-loading {model_type} model...")
+                get_model(model_type)

@@ -24,10 +24,13 @@ uvicorn server:app --host 0.0.0.0 --port 3200
 
 ### Environment Variables
 - `CHATTERBOX_DEVICE` — override device detection (`cuda`, `cpu`, `mps`). MPS is disabled by default due to Chatterbox tensor allocation issues.
+- `CHATTERBOX_PRELOAD` — comma-separated model types to load at startup (default: `turbo`). Set to empty string to disable.
+- `CHATTERBOX_DTYPE` — set to `float16` to use half precision (experimental, may affect quality).
+- `CHATTERBOX_COMPILE` — set to `true` to torch.compile the T3 transformer (slow first call, faster after).
 
 ## Architecture
 
-The entire server is in `server.py` (~194 lines). Key design decisions:
+The entire server is in `server.py` (~260 lines). Key design decisions:
 
 - **Three Chatterbox models**, lazy-loaded and cached in a `models` dict:
   - `turbo` (ChatterboxTurboTTS) — default, fastest, supports `[laugh]` syntax
@@ -35,6 +38,13 @@ The entire server is in `server.py` (~194 lines). Key design decisions:
   - `multilingual` (ChatterboxMultilingualTTS) — auto-selected for non-English `lang`
 - **Voice resolution** maps the old XTTS speaker names to `.wav` files in `voices/presets/`. Unrecognized names fall back to `nicole.wav`.
 - **Apple Silicon patch** at startup: replaces `PerthImplicitWatermarker` with `DummyWatermarker` when the ARM binary is missing (no audio quality impact).
+- **Performance optimizations** applied after model loading:
+  - `torch.inference_mode()` around generate calls
+  - `torch.set_float32_matmul_precision('high')` for TF32 matmul
+  - Voice embedding cache (`_voice_cache`) avoids re-computing speaker embeddings for repeated voices (keyed by file path + mtime)
+  - HiFiGAN weight_norm removal after loading (skips SourceModuleHnNSF which lacks the method)
+  - LSTM `flatten_parameters()` for contiguous memory layout
+  - Turbo model pre-loaded at startup (configurable via `CHATTERBOX_PRELOAD`)
 
 ### Voice directories
 - `voices/presets/` — 14 bundled voice reference WAVs (mapped to XTTS speaker names)
