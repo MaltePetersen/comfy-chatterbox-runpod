@@ -39,25 +39,25 @@ RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
 # Impact Pack: FaceDetailer, SAM-based face detection/refinement
 # Note: install.py needs PYTHONPATH to find ComfyUI modules at build time.
 # We also install the subpack's deps separately (no || true hiding errors).
-RUN cd /comfyui/custom_nodes && \
+RUN cd /opt/comfyui-baked/custom_nodes && \
     git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Pack.git && \
     cd ComfyUI-Impact-Pack && \
     pip install --no-cache-dir -r requirements.txt && \
-    PYTHONPATH=/comfyui python install.py || echo "install.py warning (non-fatal)" && \
-    cd /comfyui/custom_nodes && \
+    PYTHONPATH=/opt/comfyui-baked python install.py || echo "install.py warning (non-fatal)" && \
+    cd /opt/comfyui-baked/custom_nodes && \
     git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git && \
     cd ComfyUI-Impact-Subpack && \
     pip install --no-cache-dir -r requirements.txt
 
 # Download face detection + SAM models for FaceDetailer
-RUN mkdir -p /comfyui/models/ultralytics/bbox && \
-    mkdir -p /comfyui/models/ultralytics/segm && \
-    mkdir -p /comfyui/models/sams && \
-    curl -sL -o /comfyui/models/ultralytics/bbox/face_yolov8m.pt \
+RUN mkdir -p /opt/comfyui-baked/models/ultralytics/bbox && \
+    mkdir -p /opt/comfyui-baked/models/ultralytics/segm && \
+    mkdir -p /opt/comfyui-baked/models/sams && \
+    curl -sL -o /opt/comfyui-baked/models/ultralytics/bbox/face_yolov8m.pt \
       "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt" && \
-    curl -sL -o /comfyui/models/ultralytics/segm/face_yolov8m-seg_2.pt \
+    curl -sL -o /opt/comfyui-baked/models/ultralytics/segm/face_yolov8m-seg_2.pt \
       "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m-seg_2.pt" && \
-    curl -sL -o /comfyui/models/sams/sam_vit_b_01ec64.pth \
+    curl -sL -o /opt/comfyui-baked/models/sams/sam_vit_b_01ec64.pth \
       "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
 
 # Copy TTS server and voice presets
