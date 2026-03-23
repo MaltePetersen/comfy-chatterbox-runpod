@@ -2,11 +2,11 @@
 # ComfyUI runs on port 8188, Chatterbox TTS on port 3200.
 #
 # Build:
-#   docker build -t myuser/comfyui-chatterbox:latest -f runpod/Dockerfile .
+#   docker build -t maltepetersen/comfyui-chatterbox:latest -f runpod/Dockerfile .
 #
 # For RTX 5090 (CUDA 13.0):
 #   docker build --build-arg BASE_IMAGE=runpod/comfyui:cuda13.0 \
-#     -t myuser/comfyui-chatterbox:cuda13.0 -f runpod/Dockerfile .
+#     -t maltepetersen/comfyui-chatterbox:cuda13.0 -f runpod/Dockerfile .
 
 ARG BASE_IMAGE=runpod/comfyui:latest
 FROM ${BASE_IMAGE}
