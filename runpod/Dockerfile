@@ -47,7 +47,8 @@ RUN cd /opt/comfyui-baked/custom_nodes && \
     cd /opt/comfyui-baked/custom_nodes && \
     git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git && \
     cd ComfyUI-Impact-Subpack && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir "numpy==1.26.4"
 
 # Download face detection + SAM models for FaceDetailer
 RUN mkdir -p /opt/comfyui-baked/models/ultralytics/bbox && \
