@@ -37,14 +37,17 @@ RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
 
 # Install ComfyUI custom nodes for image quality
 # Impact Pack: FaceDetailer, SAM-based face detection/refinement
-# ComfyUI-Essentials: useful utility nodes
+# Note: install.py needs PYTHONPATH to find ComfyUI modules at build time.
+# We also install the subpack's deps separately (no || true hiding errors).
 RUN cd /comfyui/custom_nodes && \
     git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Pack.git && \
-    cd ComfyUI-Impact-Pack && pip install --no-cache-dir -r requirements.txt && \
-    python install.py && \
+    cd ComfyUI-Impact-Pack && \
+    pip install --no-cache-dir -r requirements.txt && \
+    PYTHONPATH=/comfyui python install.py || echo "install.py warning (non-fatal)" && \
     cd /comfyui/custom_nodes && \
     git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git && \
-    cd ComfyUI-Impact-Subpack && pip install --no-cache-dir -r requirements.txt || true
+    cd ComfyUI-Impact-Subpack && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Download face detection + SAM models for FaceDetailer
 RUN mkdir -p /comfyui/models/ultralytics/bbox && \
