@@ -35,6 +35,25 @@ RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
     torchcodec \
     uvicorn[standard]
 
+# Install ComfyUI custom nodes for image quality
+# Impact Pack: FaceDetailer, SAM-based face detection/refinement
+# ComfyUI-Essentials: useful utility nodes
+RUN cd /comfyui/custom_nodes && \
+    git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Pack.git && \
+    cd ComfyUI-Impact-Pack && pip install --no-cache-dir -r requirements.txt && \
+    python install.py && \
+    cd /comfyui/custom_nodes && \
+    git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git && \
+    cd ComfyUI-Impact-Subpack && pip install --no-cache-dir -r requirements.txt || true
+
+# Download face detection models for FaceDetailer
+RUN mkdir -p /comfyui/models/ultralytics/bbox && \
+    mkdir -p /comfyui/models/ultralytics/segm && \
+    curl -sL -o /comfyui/models/ultralytics/bbox/face_yolov8m.pt \
+      "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt" && \
+    curl -sL -o /comfyui/models/ultralytics/segm/face_yolov8m-seg_2.pt \
+      "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m-seg_2.pt"
+
 # Copy TTS server and voice presets
 COPY server.py /opt/chatterbox-tts/server.py
 COPY voices/ /opt/chatterbox-tts/voices/
