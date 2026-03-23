@@ -11,14 +11,14 @@
 ARG BASE_IMAGE=runpod/comfyui:latest
 FROM ${BASE_IMAGE}
 
-# Install Chatterbox TTS and FastAPI server dependencies.
-# The base image has PyTorch, torchaudio, and numpy already installed.
-# chatterbox-tts pins numpy<1.26 but no binary wheel exists for that on Python 3.12,
-# so we install chatterbox-tts with --no-deps and add its other dependencies separately.
-# Downgrade numpy to 1.26.4 (last 1.x with cp312 wheels) — numpy 2.x causes
-# dtype mismatches (float64 vs float32) in chatterbox's s3tokenizer.
-RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
-    pip install --no-cache-dir "numpy==1.26.4" \
+# ==========================================
+# Chatterbox TTS — isolated in its own venv
+# to avoid numpy conflicts with ComfyUI/Impact Pack.
+# Chatterbox needs numpy<1.26, ComfyUI needs numpy>=2.0.
+# ==========================================
+RUN python3 -m venv /opt/chatterbox-venv --system-site-packages && \
+    /opt/chatterbox-venv/bin/pip install --no-cache-dir --no-deps chatterbox-tts && \
+    /opt/chatterbox-venv/bin/pip install --no-cache-dir "numpy==1.26.4" \
     librosa==0.11.0 \
     s3tokenizer \
     transformers==4.46.3 \
@@ -35,10 +35,9 @@ RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
     torchcodec \
     uvicorn[standard]
 
-# Install ComfyUI custom nodes for image quality
-# Impact Pack: FaceDetailer, SAM-based face detection/refinement
-# Note: install.py needs PYTHONPATH to find ComfyUI modules at build time.
-# We also install the subpack's deps separately (no || true hiding errors).
+# ==========================================
+# ComfyUI custom nodes — uses system Python (numpy 2.x is fine here)
+# ==========================================
 RUN cd /opt/comfyui-baked/custom_nodes && \
     git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Pack.git && \
     cd ComfyUI-Impact-Pack && \
@@ -47,8 +46,7 @@ RUN cd /opt/comfyui-baked/custom_nodes && \
     cd /opt/comfyui-baked/custom_nodes && \
     git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git && \
     cd ComfyUI-Impact-Subpack && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir "numpy==1.26.4"
+    pip install --no-cache-dir -r requirements.txt
 
 # Download face detection + SAM models for FaceDetailer
 RUN mkdir -p /opt/comfyui-baked/models/ultralytics/bbox && \

@@ -27,11 +27,11 @@ fi
 # Ensure my_voices directory exists for uploads
 mkdir -p "$TTS_DIR/voices/my_voices"
 
-# --- Start Chatterbox TTS server ---
-echo "[chatterbox] Starting TTS server on port 3200..."
+# --- Start Chatterbox TTS server (using isolated venv) ---
+echo "[chatterbox] Starting TTS server on port 3200 (venv: /opt/chatterbox-venv)..."
 cd "$TTS_DIR"
 CHATTERBOX_PRELOAD=turbo \
-    python3 -m uvicorn server:app --host 0.0.0.0 --port 3200 \
+    /opt/chatterbox-venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 3200 \
     >> /workspace/runpod-slim/chatterbox-tts.log 2>&1 &
 echo "[chatterbox] TTS server PID: $!"
 
