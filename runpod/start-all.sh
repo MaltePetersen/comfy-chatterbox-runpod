@@ -27,6 +27,13 @@ fi
 # Ensure my_voices directory exists for uploads
 mkdir -p "$TTS_DIR/voices/my_voices"
 
+# --- Ensure ComfyUI custom nodes are loaded ---
+# Kill any ComfyUI that RunPod may have started before our nodes were ready,
+# so that /start.sh gets a clean startup with Impact Pack loaded.
+echo "[startup] Ensuring clean ComfyUI startup with custom nodes..."
+pkill -f "main.py.*comfyui" 2>/dev/null || true
+sleep 2
+
 # --- Start Chatterbox TTS server (using isolated venv) ---
 echo "[chatterbox] Starting TTS server on port 3200 (venv: /opt/chatterbox-venv)..."
 cd "$TTS_DIR"
@@ -36,4 +43,5 @@ CHATTERBOX_PRELOAD=turbo \
 echo "[chatterbox] TTS server PID: $!"
 
 # --- Hand off to original ComfyUI start script ---
+# This starts ComfyUI fresh — it will now discover Impact Pack + Subpack nodes.
 exec /start.sh
