@@ -30,6 +30,7 @@ RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
     pyloudnorm \
     omegaconf \
     fastapi \
+    python-multipart \
     uvicorn[standard]
 
 # Copy TTS server and voice presets
