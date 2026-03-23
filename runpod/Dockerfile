@@ -18,8 +18,17 @@ FROM ${BASE_IMAGE}
 # The base image's numpy 2.x works fine with chatterbox at runtime.
 RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
     pip install --no-cache-dir \
-    soundfile einops transformers tokenizers huggingface_hub \
-    safetensors conformer s3tokenizer \
+    librosa==0.11.0 \
+    s3tokenizer \
+    transformers==4.46.3 \
+    diffusers==0.29.0 \
+    resemble-perth==1.0.1 \
+    conformer==0.3.2 \
+    safetensors==0.5.3 \
+    spacy-pkuseg \
+    pykakasi==2.3.0 \
+    pyloudnorm \
+    omegaconf \
     fastapi \
     uvicorn[standard]
 
