@@ -15,9 +15,10 @@ FROM ${BASE_IMAGE}
 # The base image has PyTorch, torchaudio, and numpy already installed.
 # chatterbox-tts pins numpy<1.26 but no binary wheel exists for that on Python 3.12,
 # so we install chatterbox-tts with --no-deps and add its other dependencies separately.
-# The base image's numpy 2.x works fine with chatterbox at runtime.
+# Downgrade numpy to 1.26.4 (last 1.x with cp312 wheels) — numpy 2.x causes
+# dtype mismatches (float64 vs float32) in chatterbox's s3tokenizer.
 RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
-    pip install --no-cache-dir \
+    pip install --no-cache-dir "numpy==1.26.4" \
     librosa==0.11.0 \
     s3tokenizer \
     transformers==4.46.3 \
