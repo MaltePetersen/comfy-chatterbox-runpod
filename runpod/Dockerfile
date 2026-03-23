@@ -15,7 +15,13 @@ FROM ${BASE_IMAGE}
 # The base image already has PyTorch + torchaudio installed, so chatterbox-tts
 # will reuse those. We install into the system Python (3.12) which the ComfyUI
 # venv inherits via --system-site-packages.
-RUN pip install --no-cache-dir \
+#
+# 1) Upgrade pip/setuptools first — the base image's setuptools uses the removed
+#    pkgutil.ImpImporter which breaks numpy source builds on Python 3.12.
+# 2) Install numpy binary wheel before chatterbox-tts to avoid source build.
+RUN pip install --no-cache-dir --upgrade pip setuptools && \
+    pip install --no-cache-dir "numpy<2" && \
+    pip install --no-cache-dir \
     chatterbox-tts \
     fastapi \
     uvicorn[standard]
