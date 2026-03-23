@@ -12,17 +12,14 @@ ARG BASE_IMAGE=runpod/comfyui:latest
 FROM ${BASE_IMAGE}
 
 # Install Chatterbox TTS and FastAPI server dependencies.
-# The base image already has PyTorch + torchaudio installed, so chatterbox-tts
-# will reuse those. We install into the system Python (3.12) which the ComfyUI
-# venv inherits via --system-site-packages.
-#
-# 1) Upgrade pip/setuptools first — the base image's setuptools uses the removed
-#    pkgutil.ImpImporter which breaks numpy source builds on Python 3.12.
-# 2) Install numpy binary wheel before chatterbox-tts to avoid source build.
-RUN pip install --no-cache-dir --upgrade pip setuptools && \
-    pip install --no-cache-dir "numpy<2" && \
+# The base image has PyTorch, torchaudio, and numpy already installed.
+# chatterbox-tts pins numpy<1.26 but no binary wheel exists for that on Python 3.12,
+# so we install chatterbox-tts with --no-deps and add its other dependencies separately.
+# The base image's numpy 2.x works fine with chatterbox at runtime.
+RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
     pip install --no-cache-dir \
-    chatterbox-tts \
+    soundfile einops transformers tokenizers huggingface_hub \
+    safetensors conformer s3tokenizer \
     fastapi \
     uvicorn[standard]
 
