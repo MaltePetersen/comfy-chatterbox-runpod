@@ -31,7 +31,7 @@ mkdir -p "$TTS_DIR/voices/my_voices"
 echo "[chatterbox] Starting TTS server on port 3200..."
 cd "$TTS_DIR"
 CHATTERBOX_PRELOAD=turbo \
-    python -m uvicorn server:app --host 0.0.0.0 --port 3200 \
+    python3 -m uvicorn server:app --host 0.0.0.0 --port 3200 \
     >> /workspace/runpod-slim/chatterbox-tts.log 2>&1 &
 echo "[chatterbox] TTS server PID: $!"
 
