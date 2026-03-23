@@ -32,6 +32,7 @@ RUN pip install --no-cache-dir --no-deps chatterbox-tts && \
     omegaconf \
     fastapi \
     python-multipart \
+    torchcodec \
     uvicorn[standard]
 
 # Copy TTS server and voice presets
