@@ -27,11 +27,39 @@ fi
 # Ensure my_voices directory exists for uploads
 mkdir -p "$TTS_DIR/voices/my_voices"
 
-# --- Ensure ComfyUI custom nodes are loaded ---
-# Kill any ComfyUI that RunPod may have started before our nodes were ready,
-# so that /start.sh gets a clean startup with Impact Pack loaded.
+# --- Sync custom nodes from baked image to workspace ---
+# /start.sh copies /opt/comfyui-baked to /workspace on first boot,
+# but if the workspace already exists (from an older image), new
+# custom nodes won't be copied. Force-sync them here.
+COMFY_NODES="/workspace/runpod-slim/ComfyUI/custom_nodes"
+if [ -d "$COMFY_NODES" ]; then
+    for node_dir in /opt/comfyui-baked/custom_nodes/ComfyUI-Impact-Pack \
+                     /opt/comfyui-baked/custom_nodes/ComfyUI-Impact-Subpack; do
+        node_name=$(basename "$node_dir")
+        if [ -d "$node_dir" ] && [ ! -d "$COMFY_NODES/$node_name" ]; then
+            echo "[startup] Syncing custom node: $node_name"
+            cp -r "$node_dir" "$COMFY_NODES/"
+        fi
+    done
+fi
+
+# Also sync face detection + SAM models
+COMFY_MODELS="/workspace/runpod-slim/ComfyUI/models"
+if [ -d "$COMFY_MODELS" ]; then
+    for model_dir in ultralytics/bbox ultralytics/segm sams; do
+        src="/opt/comfyui-baked/models/$model_dir"
+        dst="$COMFY_MODELS/$model_dir"
+        if [ -d "$src" ] && [ ! -d "$dst" ]; then
+            echo "[startup] Syncing models: $model_dir"
+            mkdir -p "$dst"
+            cp -r "$src/"* "$dst/"
+        fi
+    done
+fi
+
+# Kill any ComfyUI that RunPod may have started before our nodes were ready
 echo "[startup] Ensuring clean ComfyUI startup with custom nodes..."
-pkill -f "main.py.*comfyui" 2>/dev/null || true
+pkill -f "main.py" 2>/dev/null || true
 sleep 2
 
 # --- Start Chatterbox TTS server (using isolated venv) ---
