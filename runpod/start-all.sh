@@ -66,14 +66,24 @@ COMFY_DIR="/workspace/runpod-slim/ComfyUI"
 # system interpreter means the stamp belongs in the container, which resets per
 # container exactly like /usr/local packages do.
 pick_interpreter() {
-    local venv
-    # sort -V | tail: on a CUDA bump that leaves .venv-cu128 beside a new
-    # .venv-cu130, prefer the highest version — a plain head would pick the stale one.
-    venv="$(ls -d "$COMFY_DIR"/.venv-* 2>/dev/null | sort -V | tail -n1)"
+    local venv i
+    # On a fresh volume /start.sh creates custom_nodes first and the venv a few
+    # seconds later; picking the interpreter in that gap makes ComfyUI run on system
+    # python — which reintroduces the comfy_kitchen/fp8 crash, because the dep sync
+    # then targets a different interpreter than ComfyUI actually runs on. Wait bounded
+    # for the venv. This matters on EVERY boot in a volume-less setup, where every
+    # boot is a first boot. sort -V | tail prefers the highest CUDA version when a
+    # base-image bump leaves an old .venv-cu128 beside a new .venv-cu130.
+    for i in $(seq 1 120); do
+        venv="$(ls -d "$COMFY_DIR"/.venv-* 2>/dev/null | sort -V | tail -n1)"
+        [ -n "$venv" ] && [ -x "$venv/bin/python" ] && break
+        sleep 1
+    done
     if [ -n "$venv" ] && [ -x "$venv/bin/python" ]; then
         COMFY_PY="$venv/bin/python"
         STAMP="$venv/.comfyui-reqs.sha256"
     else
+        echo "[startup] WARNING: no venv found after 120s — falling back to system python" >&2
         COMFY_PY="$(command -v python3)"
         STAMP="/var/lib/comfyui-reqs.sha256"
     fi
@@ -204,14 +214,20 @@ sleep 2
 
 cd "$COMFY_DIR"
 
+# Baked-in args apply on EVERY boot regardless of any volume file — essential for a
+# volume-less setup, where /start.sh resets comfyui_args.txt to its empty default
+# each boot. --enable-cors-header lets an external frontend call the API cross-origin.
+BASE_ARGS="--listen 0.0.0.0 --port 8188 --enable-cors-header"
+
+# Optional per-pod extras from the volume, only if one is mounted and the file has content.
 ARGS_FILE="/workspace/runpod-slim/comfyui_args.txt"
-CUSTOM_ARGS=""
+EXTRA_ARGS=""
 if [ -s "$ARGS_FILE" ]; then
-    CUSTOM_ARGS=$(grep -v '^#' "$ARGS_FILE" | tr '\n' ' ')
+    EXTRA_ARGS=$(grep -v '^#' "$ARGS_FILE" | tr '\n' ' ')
 fi
 
-echo "[startup] Starting ComfyUI: --listen 0.0.0.0 --port 8188 $CUSTOM_ARGS"
-"$COMFY_PY" main.py --listen 0.0.0.0 --port 8188 $CUSTOM_ARGS &
+echo "[startup] Starting ComfyUI: $BASE_ARGS $EXTRA_ARGS"
+"$COMFY_PY" main.py $BASE_ARGS $EXTRA_ARGS &
 COMFY_PID=$!
 
 # Keep container alive
