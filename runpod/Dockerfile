@@ -108,7 +108,8 @@ COPY voices/ /opt/chatterbox-tts/voices/
 
 # Startup wrapper: launches TTS server, then hands off to the original ComfyUI start.sh
 COPY runpod/start-all.sh /start-all.sh
-RUN chmod +x /start-all.sh
+COPY runpod/download-models.sh /download-models.sh
+RUN chmod +x /start-all.sh /download-models.sh
 
 EXPOSE 3200
 

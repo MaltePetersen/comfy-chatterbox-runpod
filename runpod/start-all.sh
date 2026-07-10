@@ -169,6 +169,19 @@ if [ ! -d "$COMFY_DIR/custom_nodes" ]; then
     exit 1
 fi
 
+# --- Model download (volume-less / first-time provisioning) ---
+# Runs in the BACKGROUND: ComfyUI comes up immediately and the models trickle in,
+# appearing after a UI refresh — no boot blocked on ~40 GB. Idempotent and
+# hash-checked, so on a persistent volume it only fetches what's missing. Gated on
+# the token, so the image stays usable without it; set SKIP_MODEL_DOWNLOAD=1 to opt out.
+MODEL_DL_LOG="/workspace/runpod-slim/model-download.log"
+if [ -x /download-models.sh ] && [ -n "${CIVITAI_TOKEN:-}" ] && [ "${SKIP_MODEL_DOWNLOAD:-0}" != "1" ]; then
+    echo "[startup] Downloading models in background -> $MODEL_DL_LOG"
+    ( /download-models.sh "$COMFY_DIR" >> "$MODEL_DL_LOG" 2>&1 ) &
+elif [ -z "${CIVITAI_TOKEN:-}" ]; then
+    echo "[startup] CIVITAI_TOKEN not set — skipping model download."
+fi
+
 if [ "$WORKSPACE_READY" = "0" ]; then
     # True first boot: the workspace was just created, nothing is synced yet, and
     # the venv only exists now. This sync is slow and unavoidably races the interim
