@@ -36,10 +36,24 @@ mkdir -p "$TTS_DIR/voices/my_voices"
 # --- Start Chatterbox TTS server (isolated venv) ---
 echo "[chatterbox] Starting TTS server on port 3200..."
 cd "$TTS_DIR"
+TTS_LOG="/workspace/runpod-slim/chatterbox-tts.log"
 CHATTERBOX_PRELOAD=turbo \
     /opt/chatterbox-venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 3200 \
-    >> /workspace/runpod-slim/chatterbox-tts.log 2>&1 &
-echo "[chatterbox] TTS server PID: $!"
+    >> "$TTS_LOG" 2>&1 &
+TTS_PID=$!
+echo "[chatterbox] TTS server PID: $TTS_PID"
+
+# The TTS server logs to a file, so a crash-on-startup used to look like
+# "autostart is broken" instead of an error. Surface it on stdout.
+(
+    sleep 120
+    if kill -0 "$TTS_PID" 2>/dev/null; then
+        echo "[chatterbox] TTS server still alive after 120s."
+    else
+        echo "[chatterbox] ERROR: TTS server died during startup. Last 30 log lines:"
+        tail -n 30 "$TTS_LOG" 2>/dev/null || true
+    fi
+) &
 
 # --- Let /start.sh create workspace + start ComfyUI ---
 # We run it in the background, wait for workspace, then fix things up.
@@ -89,20 +103,55 @@ for model_path in ultralytics/bbox/face_yolov8m.pt ultralytics/segm/face_yolov8m
     fi
 done
 
-# --- Restart ComfyUI so it picks up the new nodes ---
-# /start.sh already started ComfyUI, but it loaded before our nodes were synced.
-# Kill it and let /start.sh's wait loop restart it (or it will exit and we restart).
+# --- Pick the interpreter ComfyUI actually runs on ---
+# Used for both the dependency sync and the restart, so the two can never diverge.
+VENV_DIR="$COMFY_DIR/.venv-cu128"
+if [ -x "$VENV_DIR/bin/python" ]; then
+    COMFY_PY="$VENV_DIR/bin/python"
+else
+    COMFY_PY="$(command -v python3)"
+fi
+echo "[startup] ComfyUI interpreter: $COMFY_PY"
+
+# --- Sync ComfyUI's Python deps to the code in the workspace ---
+# ComfyUI lives on the persistent volume, its packages do not. A `git pull` in
+# the pod moves the code ahead of the image's packages — that is how a workspace
+# ComfyUI ended up importing a comfy_kitchen that was never installed, and
+# crashed with `'NoneType' object has no attribute 'Params'` on quantized models.
+#
+# The stamp lives in the container, NOT in /workspace: a recreated pod gets a
+# fresh system Python, and a stamp on the volume would falsely claim the
+# packages are already there.
+REQS="$COMFY_DIR/requirements.txt"
+STAMP="/var/lib/comfyui-reqs.sha256"
+if [ -f "$REQS" ]; then
+    want="$(sha256sum "$REQS" | cut -d' ' -f1)"
+    have=""
+    [ -f "$STAMP" ] && have="$(cat "$STAMP")"
+    if [ "$want" != "$have" ]; then
+        echo "[startup] ComfyUI deps out of sync — installing $REQS ..."
+        if "$COMFY_PY" -m pip install --no-cache-dir -r "$REQS"; then
+            echo "$want" > "$STAMP"
+            echo "[startup] ComfyUI deps installed."
+        else
+            echo "[startup] ERROR: pip install -r $REQS failed."
+            echo "[startup] ComfyUI will still start, but quantized (fp8/fp4) models may fail to load."
+        fi
+    else
+        echo "[startup] ComfyUI deps already in sync."
+    fi
+else
+    echo "[startup] WARNING: $REQS not found, skipping dependency sync."
+fi
+
+# --- Restart ComfyUI so it picks up the new nodes + deps ---
+# /start.sh already started ComfyUI, but it loaded before any of the above ran.
 echo "[startup] Restarting ComfyUI to load custom nodes..."
 sleep 5  # Give ComfyUI time to finish initial startup
 pkill -f "main.py.*comfyui" 2>/dev/null || pkill -f "main.py.*8188" 2>/dev/null || true
 sleep 2
 
-# Restart ComfyUI with correct venv + args
 cd "$COMFY_DIR"
-VENV_DIR="$COMFY_DIR/.venv-cu128"
-if [ -d "$VENV_DIR" ]; then
-    source "$VENV_DIR/bin/activate"
-fi
 
 ARGS_FILE="/workspace/runpod-slim/comfyui_args.txt"
 CUSTOM_ARGS=""
@@ -111,7 +160,7 @@ if [ -s "$ARGS_FILE" ]; then
 fi
 
 echo "[startup] Starting ComfyUI with custom nodes: --listen 0.0.0.0 --port 8188 $CUSTOM_ARGS"
-python main.py --listen 0.0.0.0 --port 8188 $CUSTOM_ARGS &
+"$COMFY_PY" main.py --listen 0.0.0.0 --port 8188 $CUSTOM_ARGS &
 COMFY_PID=$!
 
 # Keep container alive
