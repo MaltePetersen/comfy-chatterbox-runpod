@@ -14,11 +14,12 @@
 # diffusion_models/:
 #   * Illustrious/SDXL checkpoints are all-in-one (UNet+CLIP+VAE)  -> checkpoints/
 #   * Krea 2 and Anima ship the diffusion model ONLY               -> diffusion_models/
-#     and need a separate text encoder + VAE (below) to run.
+#     and need a separate text encoder + VAE (both included below) to run.
 #
-# NOTE: Moody Krea 2 is NOT covered end-to-end by this list. Like ComfyUI's stock
-# Krea/z-image workflow it also needs the z-image VAE (ae.safetensors) and a
-# qwen3_4b text encoder. Those are assumed already present; add them here if not.
+# The two model families use different text-encoder + VAE stacks:
+#   * Krea 2 (Moody): qwen_3_4b text encoder + z-image VAE (ae.safetensors)
+#   * Anima (Nova, MiaoMiao): anima_baseV10_txt + Qwen Image VAE
+# The abliterated Qwen3-VL is the uncensored alternative to the Anima text encoder.
 
 set -u
 
@@ -36,6 +37,8 @@ diffusion_models|miaomiaoHarem_anima14.safetensors|9542FDD6DB4F579B276A3FA6E2695
 text_encoders|anima_baseV10_txt.safetensors|CD2A512003E2F9F3CD3C32A9C3573F820BB28C940F73C57B1DDAA983D9223EBA|https://civitai.red/api/download/models/3107122?fileId=2987064
 text_encoders|Huihui-Qwen3-VL-4B-abliterated-fp8_scaled.safetensors|-|https://huggingface.co/ahmed22xa/Huihui-Qwen3-VL-4B-Instruct-abliterated-comfy/resolve/main/Huihui-Qwen3-VL-4B-Instruct-abliterated-fp8_scaled.safetensors
 vae|qwen_image_vae.safetensors|A70580F0213E67967EE9C95F05BB400E8FB08307E017A924BF3441223E023D1F|https://civitai.red/api/download/models/2110009?fileId=2004692
+vae|ae.safetensors|-|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors
+text_encoders|qwen_3_4b.safetensors|-|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors
 EOF
 )
 
@@ -54,6 +57,10 @@ fetch() {
                 return 1
             fi
             auth=(Authorization "Bearer $CIVITAI_TOKEN")
+            ;;
+        *huggingface*)
+            # Optional: public repos need no token, gated ones do.
+            [ -n "${HF_TOKEN:-}" ] && auth=(Authorization "Bearer $HF_TOKEN")
             ;;
     esac
     if have_aria2c; then
