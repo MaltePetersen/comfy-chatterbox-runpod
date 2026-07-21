@@ -31,7 +31,13 @@ FROM ${BASE_IMAGE}
 # The constraints file is the safety net: without it a transitive requirement
 # could quietly swap our CUDA torch for a CPU wheel off PyPI, or drag numpy 2
 # back in. With it, such a resolution fails the build instead. chatterbox-tts
-# and torchcodec go in with --no-deps for the same reason.
+# goes in with --no-deps for the same reason.
+#
+# We deliberately do NOT install torchcodec. On torch>=2.9 torchaudio.save()
+# delegates to torchcodec, whose prebuilt libs never matched this base image's
+# bleeding-edge torch (undefined symbol torch_dtype_float4_e2m1fn_x2) or its
+# FFmpeg 6 — every core lib failed to load, surfacing as a 500 on /tts. server.py
+# writes WAVs via soundfile (libsndfile) instead, so torchcodec is unnecessary.
 # ==========================================
 RUN set -eux; \
     TORCH_VER="$(python3 -c 'import torch; print(torch.__version__)')"; \
@@ -54,6 +60,7 @@ RUN set -eux; \
         numpy==1.26.4 \
         scipy==1.12.0 \
         librosa==0.11.0 \
+        soundfile \
         s3tokenizer \
         transformers==4.46.3 \
         diffusers==0.29.0 \
@@ -67,7 +74,7 @@ RUN set -eux; \
         fastapi \
         python-multipart \
         uvicorn[standard]; \
-    /opt/chatterbox-venv/bin/pip install --no-cache-dir --no-deps chatterbox-tts torchcodec; \
+    /opt/chatterbox-venv/bin/pip install --no-cache-dir --no-deps chatterbox-tts; \
     rm -f /tmp/constraints.txt
 
 # Fail the build, not the pod, when the dependency set is broken.

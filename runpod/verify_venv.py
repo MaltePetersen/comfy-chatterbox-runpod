@@ -31,6 +31,17 @@ if not scipy.__version__.startswith("1.12"):
 from transformers.models.llama import modeling_llama  # noqa: E402,F401
 from chatterbox.tts_turbo import ChatterboxTurboTTS  # noqa: E402,F401
 
+# server.py writes WAVs via soundfile (libsndfile), not torchaudio.save() — the
+# latter delegates to torchcodec, which is unusable on this base image's torch.
+# Round-trip a tiny buffer so a missing libsndfile fails the build, not /tts.
+import os as _os  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+import soundfile as _sf  # noqa: E402
+_probe = _os.path.join(_tempfile.gettempdir(), "verify_soundfile.wav")
+_sf.write(_probe, numpy.zeros(1000, dtype="float32"), 24000)
+_sf.read(_probe)
+_os.remove(_probe)
+
 print(
     f"venv OK: numpy={numpy.__version__} scipy={scipy.__version__} "
     f"torch={torch.__version__} torchaudio={torchaudio.__version__}"

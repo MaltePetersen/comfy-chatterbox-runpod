@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import tempfile
 import uuid
 import torch
-import torchaudio
+import soundfile as sf
 import shutil
 
 # --- Performance: enable TF32 matmul precision where available ---
@@ -255,7 +255,15 @@ async def generate_tts(request: Request):
     print(f"Generated in {gen_time:.2f}s ({len(text)} chars)")
 
     tmp_wav = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.wav")
-    torchaudio.save(tmp_wav, wav, model.sr)
+    # torchaudio.save() delegates to torchcodec on torch>=2.9, whose prebuilt libs
+    # don't match the RunPod base image's bleeding-edge torch (undefined symbol
+    # torch_dtype_float4_e2m1fn_x2) or its FFmpeg. soundfile writes the WAV directly
+    # via libsndfile — no torchcodec, no CUDA/FFmpeg version matching. Chatterbox
+    # loads its reference audio without torchcodec, so this was the only dependency.
+    audio = wav.detach().cpu().numpy()
+    if audio.ndim == 2:
+        audio = audio.T  # (channels, frames) -> (frames, channels) for soundfile
+    sf.write(tmp_wav, audio, model.sr)
 
     return FileResponse(tmp_wav, media_type="audio/wav", filename="speech.wav")
 
