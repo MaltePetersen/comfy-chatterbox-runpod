@@ -85,39 +85,52 @@ verify() {
     [ "${got,,}" = "${want,,}" ]
 }
 
+# A flag file lets start-all.sh (and a human) tell at a glance whether the set is
+# complete, without re-hashing 47 GB. Removed up front so a crashed/partial run
+# never leaves a stale "ready" marker behind.
+DONE_FLAG="$MODELS/.download-complete"
+rm -f "$DONE_FLAG"
+
+total=$(printf '%s\n' "$MANIFEST" | grep -c '|')
+
 echo "[models] target: $MODELS"
 echo "[models] downloader: $(have_aria2c && echo aria2c || echo curl)"
+echo "[models] $total files in manifest"
 
-ok=0; skip=0; fail=0; failed_names=""
+ok=0; skip=0; fail=0; failed_names=""; idx=0
 while IFS='|' read -r subdir name sha url; do
     [ -z "$subdir" ] && continue
+    idx=$((idx+1))
     dest="$MODELS/$subdir/$name"
     mkdir -p "$MODELS/$subdir"
 
     if [ -f "$dest" ] && verify "$dest" "$sha"; then
-        echo "[models] OK (cached): $subdir/$name"
+        echo "[models] [$idx/$total] OK (cached): $subdir/$name ($(du -h "$dest" | cut -f1))"
         skip=$((skip+1))
         continue
     fi
 
-    echo "[models] downloading: $subdir/$name"
+    started=$(date +%s)
+    echo "[models] [$idx/$total] downloading: $subdir/$name"
     if ! fetch "$url" "$dest"; then
-        echo "[models] FAILED download: $subdir/$name" >&2
+        echo "[models] [$idx/$total] FAILED download: $subdir/$name" >&2
         fail=$((fail+1)); failed_names="$failed_names $name"
         continue
     fi
     if ! verify "$dest" "$sha"; then
-        echo "[models] FAILED checksum: $subdir/$name (deleting corrupt file)" >&2
+        echo "[models] [$idx/$total] FAILED checksum: $subdir/$name (deleting corrupt file)" >&2
         rm -f "$dest"
         fail=$((fail+1)); failed_names="$failed_names $name"
         continue
     fi
-    echo "[models] done: $subdir/$name"
+    echo "[models] [$idx/$total] done: $subdir/$name ($(du -h "$dest" | cut -f1), $(( $(date +%s) - started ))s)"
     ok=$((ok+1))
 done <<< "$MANIFEST"
 
-echo "[models] summary: $ok downloaded, $skip cached, $fail failed"
+echo "[models] summary: $ok downloaded, $skip cached, $fail failed (of $total)"
 if [ "$fail" -gt 0 ]; then
     echo "[models] failed:$failed_names" >&2
     exit 1
 fi
+: > "$DONE_FLAG"
+echo "[models] ALL MODELS READY -> $MODELS"

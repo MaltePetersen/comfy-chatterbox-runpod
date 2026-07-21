@@ -179,19 +179,6 @@ if [ ! -d "$COMFY_DIR/custom_nodes" ]; then
     exit 1
 fi
 
-# --- Model download (volume-less / first-time provisioning) ---
-# Runs in the BACKGROUND: ComfyUI comes up immediately and the models trickle in,
-# appearing after a UI refresh — no boot blocked on ~40 GB. Idempotent and
-# hash-checked, so on a persistent volume it only fetches what's missing. Gated on
-# the token, so the image stays usable without it; set SKIP_MODEL_DOWNLOAD=1 to opt out.
-MODEL_DL_LOG="/workspace/runpod-slim/model-download.log"
-if [ -x /download-models.sh ] && [ -n "${CIVITAI_TOKEN:-}" ] && [ "${SKIP_MODEL_DOWNLOAD:-0}" != "1" ]; then
-    echo "[startup] Downloading models in background -> $MODEL_DL_LOG"
-    ( /download-models.sh "$COMFY_DIR" >> "$MODEL_DL_LOG" 2>&1 ) &
-elif [ -z "${CIVITAI_TOKEN:-}" ]; then
-    echo "[startup] CIVITAI_TOKEN not set — skipping model download."
-fi
-
 if [ "$WORKSPACE_READY" = "0" ]; then
     # True first boot: the workspace was just created, nothing is synced yet, and
     # the venv only exists now. This sync is slow and unavoidably races the interim
@@ -201,6 +188,33 @@ if [ "$WORKSPACE_READY" = "0" ]; then
     sync_custom_nodes
     sync_models
     sync_deps
+fi
+
+# --- Model download (volume-less / first-time provisioning) ---
+# Idempotent and hash-checked, so on a persistent volume it only fetches what's
+# missing. Gated on the token, so the image stays usable without it; set
+# SKIP_MODEL_DOWNLOAD=1 to opt out. Output is mirrored to stdout (the RunPod
+# container log) so live progress is visible with `grep '[models]'`, not buried
+# in a file nobody tails.
+#
+# WAIT_FOR_MODELS=1 blocks ComfyUI until every model is present — port 8188 stays
+# down (== "not ready") for the whole download, so the UI only comes up once its
+# models actually exist. In a volume-less setup that re-runs the full ~47 GB on
+# EVERY boot; leave it unset for the fast path where ComfyUI serves immediately
+# and the models trickle in (visible after a UI refresh).
+MODEL_DL_LOG="/workspace/runpod-slim/model-download.log"
+if [ -x /download-models.sh ] && [ -n "${CIVITAI_TOKEN:-}" ] && [ "${SKIP_MODEL_DOWNLOAD:-0}" != "1" ]; then
+    if [ "${WAIT_FOR_MODELS:-0}" = "1" ]; then
+        echo "[startup] WAIT_FOR_MODELS=1 — downloading models before ComfyUI serves. This can take a long time..."
+        # Take the interim /start.sh ComfyUI down so 8188 signals "not ready" until done.
+        pkill -f "main.py.*8188" 2>/dev/null || true
+        /download-models.sh "$COMFY_DIR" 2>&1 | tee -a "$MODEL_DL_LOG" || true
+    else
+        echo "[startup] Downloading models in background (progress mirrored to stdout + $MODEL_DL_LOG)."
+        ( /download-models.sh "$COMFY_DIR" 2>&1 | tee -a "$MODEL_DL_LOG" ) &
+    fi
+elif [ -z "${CIVITAI_TOKEN:-}" ]; then
+    echo "[startup] CIVITAI_TOKEN not set — skipping model download."
 fi
 
 # --- Restart ComfyUI under our control: our interpreter, our args, our nodes ---
