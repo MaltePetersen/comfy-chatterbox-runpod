@@ -28,17 +28,26 @@ MODELS="$COMFY_DIR/models"
 
 # manifest rows: subdir | filename | sha256 | url
 # sha256 "-" means unverified (HuggingFace CDN files without a published hash).
+# Lines starting with '#' are disabled and skipped by the loop below — used to
+# trim the model set for a smaller disk footprint without losing the row.
+#
+# Currently active: both Illustrious checkpoints (waiIllustrious_v170,
+# hassakuXL_illustrious_v34). They are all-in-one Illustrious/SDXL checkpoints
+# (UNet+CLIP+VAE), so they need none of the separate text_encoders/vae rows —
+# those belong exclusively to the Krea 2 and Anima stacks, which are off.
+# Re-enable a family by uncommenting its diffusion model AND its matching encoder
+# + VAE together (see the folder-logic notes above).
 MANIFEST=$(cat <<'EOF'
 checkpoints|hassakuXL_illustrious_v34.safetensors|1618EDB443D9C641FB01C4961F5875D5F01B1A851FD9F2EA64623CEAC82257E0|https://civitai.red/api/download/models/2615702?fileId=2503211
 checkpoints|waiIllustrious_v170.safetensors|F116B0C78FF441467B0CDC8F1936E1ED18EA31E9997C7B132B1B8DB533F0BD04|https://civitai.red/api/download/models/2883731?fileId=2763986
-diffusion_models|moodyKrea2Mix_v30_fp8.safetensors|49591A46EF95D21635156408C91F5281BEFEB090284FC243D44BC4B74D783A9E|https://civitai.red/api/download/models/3100032?fileId=2979791
-diffusion_models|novaAnimeAM_v30.safetensors|34C30FA880B631C701B256A9B3A0F2479F7F3BC84E30A55C67E9B9AE05AC18B1|https://civitai.red/api/download/models/3086321?fileId=2965742
-diffusion_models|miaomiaoHarem_anima14.safetensors|9542FDD6DB4F579B276A3FA6E26955E7E377A42BA65EFD237DCDA0B14E044D1B|https://civitai.red/api/download/models/3107122?fileId=2987069
-text_encoders|anima_baseV10_txt.safetensors|CD2A512003E2F9F3CD3C32A9C3573F820BB28C940F73C57B1DDAA983D9223EBA|https://civitai.red/api/download/models/3107122?fileId=2987064
-text_encoders|Huihui-Qwen3-VL-4B-abliterated-fp8_scaled.safetensors|-|https://huggingface.co/ahmed22xa/Huihui-Qwen3-VL-4B-Instruct-abliterated-comfy/resolve/main/Huihui-Qwen3-VL-4B-Instruct-abliterated-fp8_scaled.safetensors
-vae|qwen_image_vae.safetensors|A70580F0213E67967EE9C95F05BB400E8FB08307E017A924BF3441223E023D1F|https://civitai.red/api/download/models/2110009?fileId=2004692
-vae|ae.safetensors|-|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors
-text_encoders|qwen_3_4b.safetensors|-|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors
+#diffusion_models|moodyKrea2Mix_v30_fp8.safetensors|49591A46EF95D21635156408C91F5281BEFEB090284FC243D44BC4B74D783A9E|https://civitai.red/api/download/models/3100032?fileId=2979791
+#diffusion_models|novaAnimeAM_v30.safetensors|34C30FA880B631C701B256A9B3A0F2479F7F3BC84E30A55C67E9B9AE05AC18B1|https://civitai.red/api/download/models/3086321?fileId=2965742
+#diffusion_models|miaomiaoHarem_anima14.safetensors|9542FDD6DB4F579B276A3FA6E26955E7E377A42BA65EFD237DCDA0B14E044D1B|https://civitai.red/api/download/models/3107122?fileId=2987069
+#text_encoders|anima_baseV10_txt.safetensors|CD2A512003E2F9F3CD3C32A9C3573F820BB28C940F73C57B1DDAA983D9223EBA|https://civitai.red/api/download/models/3107122?fileId=2987064
+#text_encoders|Huihui-Qwen3-VL-4B-abliterated-fp8_scaled.safetensors|-|https://huggingface.co/ahmed22xa/Huihui-Qwen3-VL-4B-Instruct-abliterated-comfy/resolve/main/Huihui-Qwen3-VL-4B-Instruct-abliterated-fp8_scaled.safetensors
+#vae|qwen_image_vae.safetensors|A70580F0213E67967EE9C95F05BB400E8FB08307E017A924BF3441223E023D1F|https://civitai.red/api/download/models/2110009?fileId=2004692
+#vae|ae.safetensors|-|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors
+#text_encoders|qwen_3_4b.safetensors|-|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors
 EOF
 )
 
@@ -91,7 +100,7 @@ verify() {
 DONE_FLAG="$MODELS/.download-complete"
 rm -f "$DONE_FLAG"
 
-total=$(printf '%s\n' "$MANIFEST" | grep -c '|')
+total=$(printf '%s\n' "$MANIFEST" | grep -v '^#' | grep -c '|')
 
 echo "[models] target: $MODELS"
 echo "[models] downloader: $(have_aria2c && echo aria2c || echo curl)"
@@ -100,6 +109,7 @@ echo "[models] $total files in manifest"
 ok=0; skip=0; fail=0; failed_names=""; idx=0
 while IFS='|' read -r subdir name sha url; do
     [ -z "$subdir" ] && continue
+    case "$subdir" in \#*) continue;; esac
     idx=$((idx+1))
     dest="$MODELS/$subdir/$name"
     mkdir -p "$MODELS/$subdir"
