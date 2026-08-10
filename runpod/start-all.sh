@@ -192,10 +192,11 @@ fi
 
 # --- Model download (volume-less / first-time provisioning) ---
 # Idempotent and hash-checked, so on a persistent volume it only fetches what's
-# missing. Gated on the token, so the image stays usable without it; set
-# SKIP_MODEL_DOWNLOAD=1 to opt out. Output is mirrored to stdout (the RunPod
-# container log) so live progress is visible with `grep '[models]'`, not buried
-# in a file nobody tails.
+# missing. Runs when a CIVITAI_TOKEN is set (baked manifest needs it) OR a
+# MODEL_LIST env override is given (which may be HuggingFace-only, no token
+# needed); set SKIP_MODEL_DOWNLOAD=1 to opt out. Output is mirrored to stdout
+# (the RunPod container log) so live progress is visible with `grep '[models]'`,
+# not buried in a file nobody tails.
 #
 # WAIT_FOR_MODELS=1 blocks ComfyUI until every model is present — port 8188 stays
 # down (== "not ready") for the whole download, so the UI only comes up once its
@@ -203,7 +204,8 @@ fi
 # EVERY boot; leave it unset for the fast path where ComfyUI serves immediately
 # and the models trickle in (visible after a UI refresh).
 MODEL_DL_LOG="/workspace/runpod-slim/model-download.log"
-if [ -x /download-models.sh ] && [ -n "${CIVITAI_TOKEN:-}" ] && [ "${SKIP_MODEL_DOWNLOAD:-0}" != "1" ]; then
+if [ -x /download-models.sh ] && [ "${SKIP_MODEL_DOWNLOAD:-0}" != "1" ] \
+   && { [ -n "${CIVITAI_TOKEN:-}" ] || [ -n "${MODEL_LIST:-}" ]; }; then
     if [ "${WAIT_FOR_MODELS:-0}" = "1" ]; then
         echo "[startup] WAIT_FOR_MODELS=1 — downloading models before ComfyUI serves. This can take a long time..."
         # Take the interim /start.sh ComfyUI down so 8188 signals "not ready" until done.
@@ -213,8 +215,8 @@ if [ -x /download-models.sh ] && [ -n "${CIVITAI_TOKEN:-}" ] && [ "${SKIP_MODEL_
         echo "[startup] Downloading models in background (progress mirrored to stdout + $MODEL_DL_LOG)."
         ( /download-models.sh "$COMFY_DIR" 2>&1 | tee -a "$MODEL_DL_LOG" ) &
     fi
-elif [ -z "${CIVITAI_TOKEN:-}" ]; then
-    echo "[startup] CIVITAI_TOKEN not set — skipping model download."
+elif [ -z "${CIVITAI_TOKEN:-}" ] && [ -z "${MODEL_LIST:-}" ]; then
+    echo "[startup] Neither CIVITAI_TOKEN nor MODEL_LIST set — skipping model download."
 fi
 
 # --- Restart ComfyUI under our control: our interpreter, our args, our nodes ---

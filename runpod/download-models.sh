@@ -10,6 +10,19 @@
 # COMFY_DIR defaults to the workspace ComfyUI. Civitai needs the token; the
 # HuggingFace files are public. Get a token at civitai.com/user/account.
 #
+# MODEL_LIST env var — override the baked manifest from the pod without a rebuild.
+# When set (and non-empty) it REPLACES the manifest below entirely. One entry per
+# line (or ';'-separated for single-line RunPod env fields):
+#
+#   subdir|filename|url            or   subdir|filename|url|sha256
+#
+# Civitai vs HuggingFace auth is auto-picked from the URL host, so one list covers
+# both. filename may be left empty for HuggingFace (derived from the URL); Civitai
+# download URLs carry no filename, so it must be given. sha256 is optional (skips
+# the checksum when absent). Example (single line):
+#
+#   MODEL_LIST="checkpoints|waiIllustrious_v170.safetensors|https://civitai.red/api/download/models/2883731?fileId=2763986;vae||https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
+#
 # Folder logic — why some checkpoints land in checkpoints/ and some in
 # diffusion_models/:
 #   * Illustrious/SDXL checkpoints are all-in-one (UNet+CLIP+VAE)  -> checkpoints/
@@ -50,6 +63,33 @@ checkpoints|waiIllustrious_v170.safetensors|F116B0C78FF441467B0CDC8F1936E1ED18EA
 #text_encoders|qwen_3_4b.safetensors|-|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors
 EOF
 )
+
+# MODEL_LIST (env) replaces the baked manifest when set. Its rows are
+# subdir|filename|url[|sha]; we normalize them into the internal
+# subdir|filename|sha|url shape so the download loop below stays unchanged.
+# Rows accept ';' as a separator (single-line env fields) and CRLF from pastes.
+if [ -n "${MODEL_LIST:-}" ]; then
+    MANIFEST=$(printf '%s\n' "$MODEL_LIST" | tr ';' '\n' | tr -d '\r' | while IFS='|' read -r subdir name url sha; do
+        [ -z "$subdir" ] && continue
+        case "$subdir" in \#*) continue;; esac
+        if [ -z "$url" ]; then
+            echo "[models] WARNING: MODEL_LIST row without url, skipped: $subdir|$name" >&2
+            continue
+        fi
+        if [ -z "$name" ]; then
+            case "$url" in
+                *civitai*)
+                    echo "[models] WARNING: civitai row needs an explicit filename, skipped: $url" >&2
+                    continue
+                    ;;
+            esac
+            name="${url##*/}"; name="${name%%\?*}"   # last path segment, minus any query
+        fi
+        [ -z "$sha" ] && sha="-"
+        printf '%s|%s|%s|%s\n' "$subdir" "$name" "$sha" "$url"
+    done)
+    echo "[models] MODEL_LIST set — using it instead of the baked manifest."
+fi
 
 have_aria2c() { command -v aria2c >/dev/null 2>&1; }
 
