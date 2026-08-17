@@ -27,7 +27,19 @@ All-in-one-Checkpoints (UNet+CLIP+VAE), keine separaten Encoder/VAE nötig.
 checkpoints|hassakuXL_illustrious_v34.safetensors|https://civitai.red/api/download/models/2615702?fileId=2503211;checkpoints|waiIllustrious_v170.safetensors|https://civitai.red/api/download/models/2883731?fileId=2763986;checkpoints|oneObsession_v23.safetensors|https://civitai.red/api/download/models/3118448?fileId=2998810
 ```
 
-## 3) Nur Anima — 5 Dateien
+## 3) Nur Lustify — 3 Dateien
+
+Lustify baut auf Krea auf und ist nur das Diffusion-Modell — es braucht also
+denselben separaten Text-Encoder + VAE wie Krea. Der Encoder (`qwen_3_4b`) und
+die VAE (`ae.safetensors`) kommen aus dem oeffentlichen HF-Repo
+`Comfy-Org/z_image_turbo` — **tokenlos**. Nur die Lustify-Diffusion selbst
+braucht `CIVITAI_TOKEN`.
+
+```
+diffusion_models|lustify_fp8.safetensors|https://civitai.red/api/download/models/3112728?fileId=2997637;text_encoders|qwen_3_4b.safetensors|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors;vae|ae.safetensors|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors
+```
+
+## 4) Nur Anima — 5 Dateien
 
 Zwei Diffusion-Modelle + beide Text-Encoder + VAE. Der HF-Encoder
 (`Huihui-Qwen3-VL-abliterated`) ist die unzensierte Alternative zu
