@@ -105,9 +105,32 @@ RUN mkdir -p /opt/comfyui-baked/models/ultralytics/bbox && \
     curl -sL -o /opt/comfyui-baked/models/sams/sam_vit_b_01ec64.pth \
       "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
 
-# Copy TTS server and voice presets
+# Copy our standalone TTS server (kept as a manual fallback) and voice presets
 COPY server.py /opt/chatterbox-tts/server.py
 COPY voices/ /opt/chatterbox-tts/voices/
+
+# ==========================================
+# Unified local-TTS server (diataxis/local-TTS) — becomes the TTS server on 3200.
+# Chatterbox-only: the chatterbox-venv above already has every dependency the
+# Chatterbox engine needs. The Coqui/Kokoro engine modules import their heavy
+# libs lazily (see engines/base.py), so the server boots and routes with only
+# Chatterbox installed — the router reports the others as unavailable and keeps
+# serving Chatterbox exactly like the legacy single server.
+# ==========================================
+RUN git clone --depth 1 https://github.com/diataxis/local-TTS.git /opt/local-tts
+
+# torchaudio.save() delegates to torchcodec (absent) -> 500 on /tts. Write WAVs
+# via soundfile instead — same fix as our server.py (commit f0c55ad). The grep
+# fails the build if the upstream line ever changes shape.
+RUN sed -i \
+      's#^        torchaudio.save(tmp_wav, wav, model.sr)$#        import soundfile as _sf; _a = wav.detach().cpu().numpy(); _sf.write(tmp_wav, _a.T if _a.ndim == 2 else _a, model.sr)#' \
+      /opt/local-tts/engines/chatterbox_engine.py \
+ && grep -q '_sf.write(tmp_wav' /opt/local-tts/engines/chatterbox_engine.py
+
+# Overlay our 15 custom presets (+ our nicole.wav) on top of local-TTS's ~58:
+# same-named files get our version, the rest of its catalog remains -> our
+# voices *complement* the built-in set.
+COPY voices/ /opt/local-tts/voices/
 
 # HuggingFace model cache: symlink to workspace so models persist across pod restarts.
 # The actual symlink is created at runtime in start-all.sh (workspace volume isn't

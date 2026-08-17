@@ -22,27 +22,37 @@ if [ ! -L /root/.cache/huggingface ]; then
     ln -s "$HF_CACHE" /root/.cache/huggingface
 fi
 
-# --- Chatterbox TTS voice persistence ---
+# --- Unified TTS app (server_unified) + voice persistence ---
+# The unified local-TTS server replaces our standalone server.py on port 3200.
+# Chatterbox-only: it reuses the chatterbox-venv (all Chatterbox deps present);
+# the Coqui/Kokoro engines report "unavailable" and the router keeps serving
+# Chatterbox like the legacy single server. Our server.py is copied alongside
+# as a manual fallback (uvicorn server:app).
 TTS_DIR="/workspace/runpod-slim/chatterbox-tts"
-if [ ! -d "$TTS_DIR" ]; then
-    echo "[chatterbox] First boot: setting up TTS workspace..."
+if [ ! -d "$TTS_DIR/voices" ]; then
+    echo "[tts] First boot: seeding voices from image..."
     mkdir -p "$TTS_DIR"
-    cp -r /opt/chatterbox-tts/voices "$TTS_DIR/"
-    cp /opt/chatterbox-tts/server.py "$TTS_DIR/"
-else
-    cp /opt/chatterbox-tts/server.py "$TTS_DIR/"
+    cp -r /opt/local-tts/voices "$TTS_DIR/"
 fi
+# Refresh the app code every boot (the image is the source of truth), while the
+# volume keeps its voices/ — uploaded samples in my_voices/ survive. An existing
+# volume from an older image keeps its own presets; delete $TTS_DIR/voices to
+# reseed the full catalog.
+rm -rf "$TTS_DIR/engines"
+cp -r /opt/local-tts/engines "$TTS_DIR/engines"
+cp /opt/local-tts/*.py "$TTS_DIR/"
+cp /opt/chatterbox-tts/server.py "$TTS_DIR/" 2>/dev/null || true
 mkdir -p "$TTS_DIR/voices/my_voices"
 
-# --- Start Chatterbox TTS server (isolated venv) ---
-echo "[chatterbox] Starting TTS server on port 3200..."
+# --- Start unified TTS server (isolated venv) ---
+echo "[tts] Starting unified TTS server on port 3200..."
 cd "$TTS_DIR"
 TTS_LOG="/workspace/runpod-slim/chatterbox-tts.log"
-CHATTERBOX_PRELOAD=turbo \
-    /opt/chatterbox-venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 3200 \
+TTS_PRELOAD=chatterbox:turbo \
+    /opt/chatterbox-venv/bin/python -m uvicorn server_unified:app --host 0.0.0.0 --port 3200 \
     >> "$TTS_LOG" 2>&1 &
 TTS_PID=$!
-echo "[chatterbox] TTS server PID: $TTS_PID"
+echo "[tts] TTS server PID: $TTS_PID"
 
 # The TTS server logs to a file, so a crash-on-startup used to look like
 # "autostart is broken" instead of an error. Surface it on stdout.
